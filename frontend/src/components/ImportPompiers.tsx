@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import NavBar from './NavBar';
 import './ImportPompiers.css';
 
 interface PompierData {
@@ -144,8 +143,6 @@ const ImportPompiers: React.FC = () => {
 
   return (
     <div className="import-pompiers">
-      <NavBar />
-      
       <div className="import-container">
         <header className="import-header">
           <h1>🚒 Gestion des Comptes Pompiers</h1>

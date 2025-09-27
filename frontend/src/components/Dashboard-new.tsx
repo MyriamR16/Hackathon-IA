@@ -1,6 +1,5 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import NavBar from './NavBar';
 import './Dashboard.css';
 
 interface Pompier {
@@ -27,8 +26,6 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="dashboard-container">
-      <NavBar />
-      
       <header className="dashboard-header">
         <div className="header-content">
           <h1>🚒 Tableau de Bord Sapeurs-Pompiers</h1>

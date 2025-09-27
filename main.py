@@ -24,7 +24,7 @@ NEEDS_C3 = {
     "AMB_EQUI_SUAP": 2,
     "FPT_CHEF": 1,
     "FPT_COND": 1,
-    "FPT_EQUI_INC": 1,
+    "FPT_EQUI_INC": 1,   # augmenté de 1 à 2 pour atteindre 9 rôles au total
 }
 ROLE_KEYS = list(NEEDS_C3.keys())
 
@@ -129,8 +129,9 @@ def read_volontaires_spv_pibrac(xlsx_path: str) -> Dict[str, dict]:
     suap_cols = [c for c in df.columns if "SUAP" in _canon(c)]
     inc_col   = next((c for c in df.columns if _canon(c) in ("- INC", "INC")), None)
     cod0_col  = next((c for c in df.columns if "COD 0" in _canon(c) or "COD0" in _canon(c)), None)
-    cod1_col  = next((c for c in df.columns if "COD1" in _canon(c)), None)
-    pl_col    = next((c for c in df.columns if "PERMIS C" in _canon(c)), None)
+    cod1_col  = next((c for c in df.columns if "COD1" in _canon(c) or "COD 1" in _canon(c)), None)
+    pl_col    = next((c for c in df.columns if "PERMIS C" in _canon(c) or "PERMIS PL" in _canon(c)), None)
+    b_col     = next((c for c in df.columns if "PERMIS B" in _canon(c) or _canon(c) == "B"), None)
 
     vols, seen = {}, {}
     for _, r in df.iterrows():
@@ -149,6 +150,7 @@ def read_volontaires_spv_pibrac(xlsx_path: str) -> Dict[str, dict]:
         if cod0_col and str(r[cod0_col]).strip().upper() == "X": habs.add("COD0")
         if cod1_col and str(r[cod1_col]).strip().upper() == "X": habs.add("COD1")
         if pl_col and str(r[pl_col]).strip().upper() == "X": habs.add("PL")
+        if b_col and str(r[b_col]).strip().upper() == "X": habs.add("B")
 
         vols[vid] = {"nom": nom, "grade": grade, "habs": habs, "equipe": None}
 
@@ -225,9 +227,13 @@ def build_elig(vols: Dict[str, dict]) -> Dict[Tuple[str, str], int]:
     E = {}
     for v, p in vols.items():
         g = p["grade"]; H = p["habs"]
-        E[(v, "AMB_CHEF")]      = int(g >= 3 and "INC" in H)
-        E[(v, "AMB_COND")]      = int("COD0" in H)
+
+        # Ambulance: chef = grade >= Sergent (3) ; conducteur = (COD0 or COD1) AND Permis B
+        E[(v, "AMB_CHEF")]      = int(g >= 3)                                 # Sergent min (pas INC obligatoire)
+        E[(v, "AMB_COND")]      = int(("COD0" in H or "COD1" in H) and ("B" in H))
         E[(v, "AMB_EQUI_SUAP")] = int("SUAP" in H)
+
+        # Fourgon
         E[(v, "FPT_CHEF")]      = int(g >= 4 and "INC" in H)
         E[(v, "FPT_COND")]      = int("PL" in H and "COD1" in H)
         E[(v, "FPT_EQUI_INC")]  = int("INC" in H)
@@ -300,21 +306,28 @@ def solve():
     x = {(v, d, r): mdl.NewBoolVar(f"x_{v}_{d}_{r}") for v in V for d in DAYS for r in ROLE_KEYS}
     short_c3 = {}
 
+    # D'abord, forcer à 0 les variables pour personnes non éligibles ou non disponibles
     for d in DAYS:
-        for r, need in NEEDS_C3.items():
-            varlist = [x[(v, d, r)] for v in V if (v, d, 3) in DISPO and ELIG.get((v, r), 0) == 1]
-            if SOFT_CONSTRAINTS:
-                short_c3[(d, r)] = mdl.NewIntVar(0, need, f"short_{r}_{d}")
-                mdl.Add(sum(varlist) + short_c3[(d, r)] == need)
-            else:
-                mdl.Add(sum(varlist) == need)
-        for v in V:
-            mdl.Add(sum(x[(v, d, r)] for r in ROLE_KEYS) <= 1)
         for v in V:
             ok, _ = DISPO.get((v, d, 3), (False, 0.0))
             for r in ROLE_KEYS:
                 if (not ok) or (ELIG.get((v, r), 0) == 0):
                     mdl.Add(x[(v, d, r)] == 0)
+    
+    # Ensuite, contraintes de besoins par rôle (en incluant toutes les variables)
+    for d in DAYS:
+        for r, need in NEEDS_C3.items():
+            # Prendre TOUTES les variables pour ce rôle (même celles à 0)
+            varlist = [x[(v, d, r)] for v in V]
+            if SOFT_CONSTRAINTS:
+                short_c3[(d, r)] = mdl.NewIntVar(0, need, f"short_{r}_{d}")
+                mdl.Add(sum(varlist) + short_c3[(d, r)] == need)
+            else:
+                mdl.Add(sum(varlist) == need)
+        
+        # Contrainte : une personne ne peut avoir qu'un rôle maximum par jour
+        for v in V:
+            mdl.Add(sum(x[(v, d, r)] for r in ROLE_KEYS) <= 1)
 
     # --- y/h/spread ---
     y = {(v, d): mdl.NewBoolVar(f"y_{v}_{d}") for v in V for d in DAYS}

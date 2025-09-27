@@ -100,6 +100,17 @@ body {
   width: 100%;
   min-height: 100vh;
   position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Assurer que le contenu principal est sous la NavBar */
+.App > * {
+  flex: 1;
+}
+
+.App > nav + * {
+  margin-top: 0; /* La NavBar gère déjà l'espacement */
 }
 
 /* Typographie moderne */

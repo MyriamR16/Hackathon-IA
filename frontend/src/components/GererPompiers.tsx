@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import NavBar from './NavBar';
 import './GererPompiers.css';
 
 interface Pompier {
@@ -91,33 +90,22 @@ const EditModal: React.FC<EditModalProps> = ({ pompier, onClose, onSave }) => {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Modifier {pompier.prenom} {pompier.nom}</h2>
+          <h2>Modifier Pompier {pompier.nom}</h2>
           <button className="close-btn" onClick={onClose}>✕</button>
         </div>
         
         <form onSubmit={handleSubmit} className="modal-form">
           <div className="form-row">
             <div className="form-group">
-              <label>Prénom</label>
-              <input
-                type="text"
-                value={formData.prenom}
-                onChange={(e) => setFormData({...formData, prenom: e.target.value})}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Nom</label>
+              <label>Identifiant</label>
               <input
                 type="text"
                 value={formData.nom}
                 onChange={(e) => setFormData({...formData, nom: e.target.value})}
+                placeholder="A, B, C, AA, AB..."
                 required
               />
             </div>
-          </div>
-
-          <div className="form-row">
             <div className="form-group">
               <label>Grade</label>
               <select
@@ -132,6 +120,9 @@ const EditModal: React.FC<EditModalProps> = ({ pompier, onClose, onSave }) => {
                 ))}
               </select>
             </div>
+          </div>
+
+          <div className="form-row">
             <div className="form-group">
               <label>Type</label>
               <select
@@ -224,7 +215,7 @@ const GererPompiers: React.FC = () => {
   };
 
   const handleDelete = async (pompier: Pompier) => {
-    if (!confirm(`Êtes-vous sûr de vouloir supprimer ${pompier.prenom} ${pompier.nom} ?`)) {
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer le pompier ${pompier.nom} ?`)) {
       return;
     }
 
@@ -256,15 +247,13 @@ const GererPompiers: React.FC = () => {
 
   const filteredPompiers = pompiers.filter(pompier =>
     pompier.nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    pompier.prenom.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    pompier.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    pompier.grade.toLowerCase().includes(searchTerm.toLowerCase())
+    pompier.grade.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    pompier.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (loading) {
     return (
       <div className="gerer-pompiers-container">
-        <NavBar />
         <div className="loading">Chargement...</div>
       </div>
     );
@@ -272,8 +261,6 @@ const GererPompiers: React.FC = () => {
 
   return (
     <div className="gerer-pompiers-container">
-      <NavBar />
-      
       <div className="gerer-pompiers-content">
         <div className="page-header">
           <h1>📋 Gestion des Sapeurs-Pompiers</h1>
@@ -284,7 +271,7 @@ const GererPompiers: React.FC = () => {
           <div className="search-box">
             <input
               type="text"
-              placeholder="Rechercher par nom, prénom, email ou grade..."
+              placeholder="Rechercher par identifiant (A, B, C...) ou grade..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="search-input"
@@ -305,7 +292,7 @@ const GererPompiers: React.FC = () => {
             <div key={pompier.id} className={`pompier-card ${pompier.role === 'admin' ? 'admin-card' : ''}`}>
               <div className="card-header">
                 <div className="pompier-info">
-                  <h3>{pompier.prenom} {pompier.nom}</h3>
+                  <h3>Pompier {pompier.nom}</h3>
                   <span className="grade">{pompier.grade}</span>
                   {pompier.role === 'admin' && <span className="admin-badge">👑 Admin</span>}
                 </div>
@@ -330,6 +317,10 @@ const GererPompiers: React.FC = () => {
               </div>
               
               <div className="card-content">
+                <div className="info-item">
+                  <span className="label">🆔 ID Planning:</span>
+                  <span><strong>{pompier.nom}</strong></span>
+                </div>
                 <div className="info-item">
                   <span className="label">📧 Email:</span>
                   <span>{pompier.email}</span>
@@ -356,6 +347,9 @@ const GererPompiers: React.FC = () => {
         {filteredPompiers.length === 0 && (
           <div className="no-results">
             <p>Aucun pompier trouvé{searchTerm && ` pour "${searchTerm}"`}</p>
+            {!searchTerm && pompiers.length === 1 && (
+              <p>Utilisez la fonction "Import Pompiers" pour ajouter les pompiers depuis Excel</p>
+            )}
           </div>
         )}
       </div>

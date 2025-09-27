@@ -193,6 +193,23 @@ def deconnexion():
     session.pop('pompier_id', None)
     return jsonify({'message': 'Déconnexion réussie'}), 200
 
+@bp.route('/check-session', methods=['GET'])
+def check_session():
+    """Vérifier si la session utilisateur est valide"""
+    if 'pompier_id' not in session:
+        return jsonify({'authenticated': False}), 200
+    
+    # Vérifier que le pompier existe toujours en base
+    pompier = Pompier.query.get(session['pompier_id'])
+    if not pompier:
+        session.pop('pompier_id', None)
+        return jsonify({'authenticated': False}), 200
+    
+    return jsonify({
+        'authenticated': True,
+        'pompier': pompier.to_dict()
+    }), 200
+
 @bp.route('/grades', methods=['GET'])
 def get_grades():
     """Récupérer la liste des grades disponibles"""

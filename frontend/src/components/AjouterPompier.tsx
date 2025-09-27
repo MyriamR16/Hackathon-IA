@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import NavBar from './NavBar';
 import './AjouterPompier.css';
 
 interface FormData {
@@ -119,8 +118,6 @@ const AjouterPompier: React.FC = () => {
 
   return (
     <div className="ajouter-pompier-container">
-      <NavBar />
-      
       <div className="ajouter-pompier-content">
         <div className="form-container">
           <header className="form-header">
