@@ -752,7 +752,7 @@ def get_creneau_details(date, creneau):
     except Exception as e:
         return jsonify({'error': f'Erreur lors de la récupération des détails: {str(e)}'}), 500
 
-@bp.route('/planning/pompiers', methods=['GET'])
+@bp.route('/planning/pompiers-details', methods=['GET'])
 def get_pompiers_info():
     """Récupérer les informations des pompiers depuis le fichier Excel"""
     try:

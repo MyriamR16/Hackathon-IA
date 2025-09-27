@@ -60,6 +60,20 @@ const NavBar: React.FC = () => {
             🏠 Accueil
           </Link>
           
+          <Link 
+            to="/planning" 
+            className={`nav-link ${location.pathname === '/planning' ? 'active' : ''}`}
+          >
+            📅 Planning
+          </Link>
+
+          <Link 
+            to="/suivi-heures" 
+            className={`nav-link ${location.pathname === '/suivi-heures' ? 'active' : ''}`}
+          >
+            📊 Suivi des Heures
+          </Link>
+          
           {/* Liens disponibles seulement pour les admins */}
           {isAdmin && (
             <>

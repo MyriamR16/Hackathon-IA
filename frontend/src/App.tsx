@@ -5,6 +5,7 @@ import AjouterPompier from './components/AjouterPompier';
 import GererPompiers from './components/GererPompiers';
 import PlanningCalendrier from './components/PlanningCalendrier';
 import ImportPompiers from './components/ImportPompiers';
+import SuiviHeures from './components/SuiviHeures';
 import './App.css';
 
 function App() {
@@ -29,6 +30,9 @@ function App() {
           
           {/* Route pour le planning calendrier */}
           <Route path="/planning" element={<PlanningCalendrier />} />
+          
+          {/* Route pour le suivi des heures */}
+          <Route path="/suivi-heures" element={<SuiviHeures />} />
           
           {/* Route pour l'import des pompiers (admin seulement) */}
           <Route path="/import-pompiers" element={<ImportPompiers />} />
