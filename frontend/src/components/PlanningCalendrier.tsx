@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { usePlanningContext } from '../context/PlanningContext';
 import './PlanningCalendrier.css';
 
 interface Disponibilite {
@@ -50,19 +52,23 @@ interface CalendarDate {
 }
 
 const PlanningCalendrier: React.FC = () => {
+  const navigate = useNavigate();
+  const { filters, setFilters } = usePlanningContext();
   const [listePompiers, setListePompiers] = useState<string[]>([]);
   const [disponibilites, setDisponibilites] = useState<PompierDisponibilites[]>([]);
   const [disponibilitesIndividuelles, setDisponibilitesIndividuelles] = useState<DisponibilitesIndividuelles>({});
   const [planningOptimise, setPlanningOptimise] = useState<PlanningCalendar>({});
   const [calendarDates, setCalendarDates] = useState<CalendarDate[]>([]);
-  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1);
-  const [currentYear, setCurrentYear] = useState(2025);
-  const [selectedPompier, setSelectedPompier] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'disponibilites' | 'planning'>('disponibilites');
-  const [selectedSlot, setSelectedSlot] = useState<number>(0); // 0 = tous les créneaux
   const [selectedCreneauDetail, setSelectedCreneauDetail] = useState<{date: string, slot: number} | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+
+  // Utilisation des filtres du contexte
+  const currentMonth = filters.currentMonth;
+  const currentYear = filters.currentYear;
+  const selectedPompier = filters.selectedPompier;
+  const viewMode = filters.viewMode;
+  const selectedSlot = filters.selectedSlot;
 
   const slotLabels = {
     1: 'Créneau 1',
@@ -256,8 +262,7 @@ const PlanningCalendrier: React.FC = () => {
       newYear--;
     }
 
-    setCurrentMonth(newMonth);
-    setCurrentYear(newYear);
+    setFilters({ currentMonth: newMonth, currentYear: newYear });
   };
 
   const renderDisponibiliteCell = (date: CalendarDate) => {
@@ -384,7 +389,7 @@ const PlanningCalendrier: React.FC = () => {
                   name="viewMode"
                   value="disponibilites"
                   checked={viewMode === 'disponibilites'}
-                  onChange={(e) => setViewMode(e.target.value as 'disponibilites')}
+                  onChange={(e) => setFilters({ viewMode: e.target.value as 'disponibilites' })}
                 />
                 Disponibilités
               </label>
@@ -394,7 +399,7 @@ const PlanningCalendrier: React.FC = () => {
                   name="viewMode"
                   value="planning"
                   checked={viewMode === 'planning'}
-                  onChange={(e) => setViewMode(e.target.value as 'planning')}
+                  onChange={(e) => setFilters({ viewMode: e.target.value as 'planning' })}
                 />
                 Planning optimisé
               </label>
@@ -403,7 +408,7 @@ const PlanningCalendrier: React.FC = () => {
             {viewMode === 'disponibilites' && (
               <select
                 value={selectedPompier}
-                onChange={(e) => setSelectedPompier(e.target.value)}
+                onChange={(e) => setFilters({ selectedPompier: e.target.value })}
                 className="pompier-select"
               >
                 <option value="">Tous les pompiers</option>
@@ -417,7 +422,7 @@ const PlanningCalendrier: React.FC = () => {
 
             <select
               value={selectedSlot}
-              onChange={(e) => setSelectedSlot(parseInt(e.target.value))}
+              onChange={(e) => setFilters({ selectedSlot: parseInt(e.target.value) })}
               className="slot-select"
             >
               <option value={0}>Tous les créneaux</option>
@@ -434,6 +439,16 @@ const PlanningCalendrier: React.FC = () => {
               className="generate-button"
             >
               {loading ? 'Génération...' : '🔄 Générer planning optimisé'}
+            </button>
+          )}
+          
+          {(filters.selectedPompier !== '' || filters.selectedSlot !== 0) && (
+            <button
+              onClick={() => navigate('/gerer-pompiers')}
+              className="manage-filtered-button"
+              title="Gérer les pompiers avec les filtres actifs"
+            >
+              👥 Gérer pompiers filtrés
             </button>
           )}
         </div>

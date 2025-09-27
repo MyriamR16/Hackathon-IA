@@ -8,6 +8,7 @@ import ImportPompiers from './components/ImportPompiers';
 import SuiviHeures from './components/SuiviHeures';
 import NavBar from './components/NavBar';
 import ProtectedRoute from './components/ProtectedRoute';
+import { PlanningProvider } from './context/PlanningContext';
 import './App.css';
 
 function AppContent() {
@@ -73,7 +74,9 @@ function AppContent() {
 function App() {
   return (
     <Router>
-      <AppContent />
+      <PlanningProvider>
+        <AppContent />
+      </PlanningProvider>
     </Router>
   );
 }

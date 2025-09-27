@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { usePlanningContext } from '../context/PlanningContext';
 import './GererPompiers.css';
 
 interface Pompier {
@@ -180,6 +181,7 @@ const EditModal: React.FC<EditModalProps> = ({ pompier, onClose, onSave }) => {
 
 const GererPompiers: React.FC = () => {
   const navigate = useNavigate();
+  const { filters, clearFilters } = usePlanningContext();
   const [pompiers, setPompiers] = useState<Pompier[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingPompier, setEditingPompier] = useState<Pompier | null>(null);
@@ -245,11 +247,22 @@ const GererPompiers: React.FC = () => {
     setPompiers(pompiers.map(p => p.id === updatedPompier.id ? updatedPompier : p));
   };
 
-  const filteredPompiers = pompiers.filter(pompier =>
-    pompier.nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    pompier.grade.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    pompier.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredPompiers = pompiers.filter(pompier => {
+    // Filtre de base par recherche
+    const matchesSearch = pompier.nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      pompier.grade.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      pompier.email.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // Filtre par pompier spécifique depuis le planning
+    if (filters.selectedPompier && filters.selectedPompier !== '') {
+      const matchesPlanningFilter = pompier.nom === filters.selectedPompier;
+      return matchesSearch && matchesPlanningFilter;
+    }
+    
+    return matchesSearch;
+  });
+
+  const hasActiveFilters = filters.selectedPompier !== '' || filters.selectedSlot !== 0;
 
   if (loading) {
     return (
@@ -267,6 +280,36 @@ const GererPompiers: React.FC = () => {
           <p>Gérez les comptes et informations des membres de votre équipe</p>
         </div>
 
+        {/* Affichage des filtres actifs du planning */}
+        {hasActiveFilters && (
+          <div className="active-filters-section">
+            <div className="active-filters-header">
+              <h3>🎯 Filtres actifs depuis le planning</h3>
+              <button 
+                onClick={clearFilters}
+                className="clear-filters-btn"
+                title="Effacer tous les filtres"
+              >
+                ✕ Effacer filtres
+              </button>
+            </div>
+            <div className="active-filters-list">
+              {filters.selectedPompier && (
+                <div className="filter-tag">
+                  <span className="filter-label">Pompier:</span>
+                  <span className="filter-value">{filters.selectedPompier}</span>
+                </div>
+              )}
+              {filters.selectedSlot !== 0 && (
+                <div className="filter-tag">
+                  <span className="filter-label">Créneau:</span>
+                  <span className="filter-value">Créneau {filters.selectedSlot}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="controls">
           <div className="search-box">
             <input
@@ -280,6 +323,11 @@ const GererPompiers: React.FC = () => {
           <div className="stats">
             <span className="stat-item">
               👥 Total: <strong>{pompiers.length}</strong>
+              {hasActiveFilters && (
+                <span style={{ color: '#6366f1', marginLeft: '0.5rem' }}>
+                  (Affichés: <strong>{filteredPompiers.length}</strong>)
+                </span>
+              )}
             </span>
             <span className="stat-item">
               👑 Admins: <strong>{pompiers.filter(p => p.role === 'admin').length}</strong>
@@ -346,9 +394,25 @@ const GererPompiers: React.FC = () => {
 
         {filteredPompiers.length === 0 && (
           <div className="no-results">
-            <p>Aucun pompier trouvé{searchTerm && ` pour "${searchTerm}"`}</p>
-            {!searchTerm && pompiers.length === 1 && (
+            {hasActiveFilters ? (
+              <div>
+                <p>Aucun pompier trouvé avec les filtres appliqués depuis le planning</p>
+                <p>
+                  <button 
+                    onClick={clearFilters}
+                    className="btn btn-primary"
+                    style={{ marginTop: '1rem' }}
+                  >
+                    🎯 Effacer les filtres du planning
+                  </button>
+                </p>
+              </div>
+            ) : searchTerm ? (
+              <p>Aucun pompier trouvé pour "{searchTerm}"</p>
+            ) : pompiers.length === 1 ? (
               <p>Utilisez la fonction "Import Pompiers" pour ajouter les pompiers depuis Excel</p>
+            ) : (
+              <p>Aucun pompier trouvé</p>
             )}
           </div>
         )}
