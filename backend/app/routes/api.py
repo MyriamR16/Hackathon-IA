@@ -422,57 +422,335 @@ def get_list_pompiers():
 
 @bp.route('/planning/optimise', methods=['POST'])
 def generate_planning_optimise():
-    """Générer le planning optimisé en exécutant le script Python"""
+    """Générer et analyser le planning optimisé avec calcul de couverture par créneau"""
     try:
-        # Chemin vers le script de planning optimal
-        script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'planning_Optimal.py')
-        
-        if not os.path.exists(script_path):
-            return jsonify({'error': 'Script de planning optimal non trouvé'}), 404
-        
-        # Exécuter le script
-        result = subprocess.run(['python', script_path], 
-                              capture_output=True, 
-                              text=True, 
-                              cwd=os.path.dirname(script_path))
-        
-        if result.returncode != 0:
-            return jsonify({'error': f'Erreur lors de l\'exécution: {result.stderr}'}), 500
-        
-        # Lire le fichier de résultat généré
-        output_path = os.path.join(os.path.dirname(script_path), 'planning_optimise.csv')
+        # Chemin vers le fichier CSV de planning optimisé
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        output_path = os.path.join(project_root, 'planning_optimise.csv')
         
         if not os.path.exists(output_path):
-            return jsonify({'error': 'Fichier de planning optimisé non généré'}), 500
+            return jsonify({'error': 'Fichier de planning optimisé non trouvé. Assurez-vous que planning_optimise.csv existe.'}), 404
         
+        # Lire le fichier CSV directement
         df_planning = pd.read_csv(output_path)
-        planning_data = df_planning.to_dict('records')
+        
+        # Organiser les données par jour et créneau
+        planning_calendar = {}
+        
+        for _, row in df_planning.iterrows():
+            day = row['day']
+            slot = row['slot']
+            category = row['category']
+            role = row['role']
+            person_id = row['person_id']
+            person_name = row['person_name']
+            shortage_count = row['shortage_count'] if pd.notna(row['shortage_count']) else 0
+            
+            if day not in planning_calendar:
+                planning_calendar[day] = {
+                    1: {'pompiers': [], 'shortages': {}},
+                    2: {'pompiers': [], 'shortages': {}},
+                    3: {'pompiers': [], 'shortages': {}},
+                    4: {'pompiers': [], 'shortages': {}}
+                }
+            
+            if category == 'SHORTAGE':
+                # Gérer les manques de personnel
+                if role not in planning_calendar[day][slot]['shortages']:
+                    planning_calendar[day][slot]['shortages'][role] = 0
+                planning_calendar[day][slot]['shortages'][role] += int(shortage_count) if shortage_count else 1
+            elif person_id and str(person_id).strip() != '' and str(person_id).lower() != 'nan':
+                # Ajouter le pompier au créneau
+                planning_calendar[day][slot]['pompiers'].append({
+                    'id': person_id,
+                    'name': person_name,
+                    'role': role if role != '-' else None,
+                    'category': category
+                })
+        
+        # Calculer la couverture pour chaque créneau
+        def calculate_coverage(slot_data, slot_number):
+            pompiers_count = len(slot_data['pompiers'])
+            shortages = slot_data['shortages']
+            
+            if slot_number == 1:
+                # Créneau 1: Au moins 3 pompiers
+                required = 3
+                coverage_percent = min(100, (pompiers_count / required) * 100)
+                if coverage_percent == 100:
+                    color = 'green'
+                elif coverage_percent >= 50:
+                    color = 'orange' 
+                else:
+                    color = 'red'
+            
+            elif slot_number == 2 or slot_number == 4:
+                # Créneau 2 et 4: Au moins 8 pompiers
+                required = 8
+                coverage_percent = min(100, (pompiers_count / required) * 100)
+                if coverage_percent == 100:
+                    color = 'green'
+                elif coverage_percent >= 50:
+                    color = 'orange'
+                else:
+                    color = 'red'
+            
+            elif slot_number == 3:
+                # Créneau 3: Tous les rôles remplis (système complexe)
+                required_roles = ['AMB_CHEF', 'AMB_COND', 'AMB_EQUI_SUAP', 'FPT_CHEF', 'FPT_COND', 'FPT_EQUI_INC']
+                roles_present = set()
+                
+                for pompier in slot_data['pompiers']:
+                    if pompier['role'] and pompier['role'] in required_roles:
+                        roles_present.add(pompier['role'])
+                
+                missing_roles = set(required_roles) - roles_present
+                total_shortages = sum(shortages.values())
+                
+                if len(missing_roles) == 0 and total_shortages == 0:
+                    color = 'green'
+                    coverage_percent = 100
+                else:
+                    color = 'red'
+                    filled_roles = len(roles_present)
+                    coverage_percent = (filled_roles / len(required_roles)) * 100
+            
+            return {
+                'color': color,
+                'coverage_percent': round(coverage_percent, 1),
+                'pompiers_count': pompiers_count,
+                'shortages': shortages,
+                'missing_roles': list(missing_roles) if slot_number == 3 else []
+            }
+        
+        # Formater les données pour le frontend
+        formatted_calendar = {}
+        for day, slots in planning_calendar.items():
+            formatted_calendar[day] = {}
+            for slot_num in [1, 2, 3, 4]:
+                slot_data = slots[slot_num]
+                coverage = calculate_coverage(slot_data, slot_num)
+                
+                formatted_calendar[day][f'creneau{slot_num}'] = {
+                    'pompiers': slot_data['pompiers'],
+                    'color': coverage['color'],
+                    'coverage_percent': coverage['coverage_percent'],
+                    'pompiers_count': coverage['pompiers_count'],
+                    'shortages': coverage['shortages'],
+                    'missing_roles': coverage.get('missing_roles', [])
+                }
         
         return jsonify({
             'message': 'Planning optimisé généré avec succès',
-            'planning': planning_data,
-            'output': result.stdout
+            'calendar': formatted_calendar,
+            'total_days': len(formatted_calendar),
+            'source': 'planning_optimise.csv'
         }), 200
         
     except Exception as e:
-        return jsonify({'error': f'Erreur lors de la génération du planning: {str(e)}'}), 500
+        return jsonify({'error': f'Erreur lors du chargement du planning: {str(e)}'}), 500
 
 @bp.route('/planning/optimise', methods=['GET'])
 def get_planning_optimise():
-    """Récupérer le planning optimisé existant"""
+    """Récupérer le planning optimisé existant avec calcul de couverture"""
     try:
-        output_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'planning_optimise.csv')
+        # Chemin vers le répertoire racine du projet (parent de backend)
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        output_path = os.path.join(project_root, 'planning_optimise.csv')
         
         if not os.path.exists(output_path):
             return jsonify({'error': 'Aucun planning optimisé disponible. Générez-en un d\'abord.'}), 404
         
+        # Lire le fichier CSV directement
         df_planning = pd.read_csv(output_path)
-        planning_data = df_planning.to_dict('records')
         
-        return jsonify({'planning': planning_data}), 200
+        # Organiser les données par jour et créneau
+        planning_calendar = {}
+        
+        for _, row in df_planning.iterrows():
+            day = row['day']
+            slot = row['slot']
+            category = row['category']
+            role = row['role']
+            person_id = row['person_id']
+            person_name = row['person_name']
+            shortage_count = row['shortage_count'] if pd.notna(row['shortage_count']) else 0
+            
+            if day not in planning_calendar:
+                planning_calendar[day] = {
+                    1: {'pompiers': [], 'shortages': {}},
+                    2: {'pompiers': [], 'shortages': {}},
+                    3: {'pompiers': [], 'shortages': {}},
+                    4: {'pompiers': [], 'shortages': {}}
+                }
+            
+            if category == 'SHORTAGE':
+                # Gérer les manques de personnel
+                if role not in planning_calendar[day][slot]['shortages']:
+                    planning_calendar[day][slot]['shortages'][role] = 0
+                planning_calendar[day][slot]['shortages'][role] += int(shortage_count) if shortage_count else 1
+            elif person_id and str(person_id).strip() != '' and str(person_id).lower() != 'nan':
+                # Ajouter le pompier au créneau
+                planning_calendar[day][slot]['pompiers'].append({
+                    'id': person_id,
+                    'name': person_name,
+                    'role': role if role != '-' else None,
+                    'category': category
+                })
+        
+        # Calculer la couverture pour chaque créneau
+        def calculate_coverage(slot_data, slot_number):
+            pompiers_count = len(slot_data['pompiers'])
+            shortages = slot_data['shortages']
+            
+            if slot_number == 1:
+                # Créneau 1: Au moins 3 pompiers
+                required = 3
+                coverage_percent = min(100, (pompiers_count / required) * 100)
+                if coverage_percent == 100:
+                    color = 'green'
+                elif coverage_percent >= 50:
+                    color = 'orange' 
+                else:
+                    color = 'red'
+            
+            elif slot_number == 2 or slot_number == 4:
+                # Créneau 2 et 4: Au moins 8 pompiers
+                required = 8
+                coverage_percent = min(100, (pompiers_count / required) * 100)
+                if coverage_percent == 100:
+                    color = 'green'
+                elif coverage_percent >= 50:
+                    color = 'orange'
+                else:
+                    color = 'red'
+            
+            elif slot_number == 3:
+                # Créneau 3: Tous les rôles remplis (système complexe)
+                required_roles = ['AMB_CHEF', 'AMB_COND', 'AMB_EQUI_SUAP', 'FPT_CHEF', 'FPT_COND', 'FPT_EQUI_INC']
+                roles_present = set()
+                
+                for pompier in slot_data['pompiers']:
+                    if pompier['role'] and pompier['role'] in required_roles:
+                        roles_present.add(pompier['role'])
+                
+                missing_roles = set(required_roles) - roles_present
+                total_shortages = sum(shortages.values())
+                
+                if len(missing_roles) == 0 and total_shortages == 0:
+                    color = 'green'
+                    coverage_percent = 100
+                else:
+                    color = 'red'
+                    filled_roles = len(roles_present)
+                    coverage_percent = (filled_roles / len(required_roles)) * 100
+            
+            return {
+                'color': color,
+                'coverage_percent': round(coverage_percent, 1),
+                'pompiers_count': pompiers_count,
+                'shortages': shortages,
+                'missing_roles': list(missing_roles) if slot_number == 3 else []
+            }
+        
+        # Formater les données pour le frontend
+        formatted_calendar = {}
+        for day, slots in planning_calendar.items():
+            formatted_calendar[day] = {}
+            for slot_num in [1, 2, 3, 4]:
+                slot_data = slots[slot_num]
+                coverage = calculate_coverage(slot_data, slot_num)
+                
+                formatted_calendar[day][f'creneau{slot_num}'] = {
+                    'pompiers': slot_data['pompiers'],
+                    'color': coverage['color'],
+                    'coverage_percent': coverage['coverage_percent'],
+                    'pompiers_count': coverage['pompiers_count'],
+                    'shortages': coverage['shortages'],
+                    'missing_roles': coverage.get('missing_roles', [])
+                }
+        
+        return jsonify({
+            'calendar': formatted_calendar,
+            'total_days': len(formatted_calendar)
+        }), 200
         
     except Exception as e:
         return jsonify({'error': f'Erreur lors de la lecture du planning: {str(e)}'}), 500
+
+@bp.route('/planning/optimise/<date>/<int:creneau>', methods=['GET'])
+def get_creneau_details(date, creneau):
+    """Récupérer les détails d'un créneau spécifique (pompiers assignés)"""
+    try:
+        # Chemin vers le répertoire racine du projet (parent de backend)
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        output_path = os.path.join(project_root, 'planning_optimise.csv')
+        
+        if not os.path.exists(output_path):
+            return jsonify({'error': 'Aucun planning optimisé disponible.'}), 404
+        
+        # Lire le fichier CSV et filtrer pour le jour/créneau spécifique
+        df_planning = pd.read_csv(output_path)
+        creneau_data = df_planning[(df_planning['day'] == date) & (df_planning['slot'] == creneau)]
+        
+        if creneau_data.empty:
+            return jsonify({'error': 'Aucune donnée trouvée pour ce créneau.'}), 404
+        
+        pompiers = []
+        shortages = {}
+        
+        for _, row in creneau_data.iterrows():
+            category = row['category']
+            role = row['role']
+            person_id = row['person_id']
+            person_name = row['person_name']
+            shortage_count = row['shortage_count'] if pd.notna(row['shortage_count']) else 0
+            
+            if category == 'SHORTAGE':
+                if role not in shortages:
+                    shortages[role] = 0
+                shortages[role] += int(shortage_count) if shortage_count else 1
+            elif person_id and str(person_id).strip() != '' and str(person_id).lower() != 'nan':
+                pompiers.append({
+                    'id': person_id,
+                    'name': person_name,
+                    'role': role if role != '-' else None,
+                    'category': category
+                })
+        
+        # Calculer les statistiques de couverture
+        pompiers_count = len(pompiers)
+        
+        if creneau == 1:
+            required = 3
+            coverage_percent = min(100, (pompiers_count / required) * 100)
+        elif creneau == 2 or creneau == 4:
+            required = 8
+            coverage_percent = min(100, (pompiers_count / required) * 100)
+        elif creneau == 3:
+            required_roles = ['AMB_CHEF', 'AMB_COND', 'AMB_EQUI_SUAP', 'FPT_CHEF', 'FPT_COND', 'FPT_EQUI_INC']
+            roles_present = set()
+            
+            for pompier in pompiers:
+                if pompier['role'] and pompier['role'] in required_roles:
+                    roles_present.add(pompier['role'])
+            
+            missing_roles = set(required_roles) - roles_present
+            filled_roles = len(roles_present)
+            coverage_percent = (filled_roles / len(required_roles)) * 100
+        
+        return jsonify({
+            'date': date,
+            'creneau': creneau,
+            'pompiers': pompiers,
+            'pompiers_count': pompiers_count,
+            'shortages': shortages,
+            'coverage_percent': round(coverage_percent, 1),
+            'missing_roles': list(missing_roles) if creneau == 3 else []
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur lors de la récupération des détails: {str(e)}'}), 500
 
 @bp.route('/planning/pompiers', methods=['GET'])
 def get_pompiers_info():

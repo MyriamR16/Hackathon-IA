@@ -1,13 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './PlanningCalendrier.css';
 
-interface Pompier {
-  id: string;
-  nom: string;
-  grade: string;
-  habilitations: string[];
-}
-
 interface Disponibilite {
   date: string;
   slot: number;
@@ -25,14 +18,29 @@ interface DisponibilitesIndividuelles {
   };
 }
 
-interface PlanningAssignment {
-  day: string;
-  slot: number;
+interface PompierPlanifie {
+  id: string;
+  name: string;
+  role: string | null;
   category: string;
-  role: string;
-  person_id: string;
-  person_name: string;
-  shortage_count: string;
+}
+
+interface CreneauPlanning {
+  pompiers: PompierPlanifie[];
+  color: string;
+  coverage_percent: number;
+  pompiers_count: number;
+  shortages: { [role: string]: number };
+  missing_roles: string[];
+}
+
+interface PlanningCalendar {
+  [date: string]: {
+    creneau1: CreneauPlanning;
+    creneau2: CreneauPlanning;
+    creneau3: CreneauPlanning;
+    creneau4: CreneauPlanning;
+  };
 }
 
 interface CalendarDate {
@@ -43,16 +51,16 @@ interface CalendarDate {
 
 const PlanningCalendrier: React.FC = () => {
   const [listePompiers, setListePompiers] = useState<string[]>([]);
-  const [pompiers, setPompiers] = useState<Pompier[]>([]);
   const [disponibilites, setDisponibilites] = useState<PompierDisponibilites[]>([]);
   const [disponibilitesIndividuelles, setDisponibilitesIndividuelles] = useState<DisponibilitesIndividuelles>({});
-  const [planningOptimise, setPlanningOptimise] = useState<PlanningAssignment[]>([]);
+  const [planningOptimise, setPlanningOptimise] = useState<PlanningCalendar>({});
   const [calendarDates, setCalendarDates] = useState<CalendarDate[]>([]);
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1);
   const [currentYear, setCurrentYear] = useState(2025);
   const [selectedPompier, setSelectedPompier] = useState<string>('');
   const [viewMode, setViewMode] = useState<'disponibilites' | 'planning'>('disponibilites');
   const [selectedSlot, setSelectedSlot] = useState<number>(0); // 0 = tous les créneaux
+  const [selectedCreneauDetail, setSelectedCreneauDetail] = useState<{date: string, slot: number} | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
@@ -72,7 +80,6 @@ const PlanningCalendrier: React.FC = () => {
 
   useEffect(() => {
     loadListePompiers();
-    loadPompiers();
     loadDisponibilites();
     loadCalendar();
   }, [currentMonth, currentYear]);
@@ -100,20 +107,6 @@ const PlanningCalendrier: React.FC = () => {
       }
     } catch (err) {
       setError('Erreur lors du chargement de la liste des pompiers');
-    }
-  };
-
-  const loadPompiers = async () => {
-    try {
-      const response = await fetch('http://localhost:5000/api/pompiers');
-      const data = await response.json();
-      if (response.ok) {
-        setPompiers(data);
-      } else {
-        setError(data.error);
-      }
-    } catch (err) {
-      setError('Erreur lors du chargement des pompiers');
     }
   };
 
@@ -166,14 +159,14 @@ const PlanningCalendrier: React.FC = () => {
       const response = await fetch('http://localhost:5000/api/planning/optimise');
       const data = await response.json();
       if (response.ok) {
-        setPlanningOptimise(data.planning);
+        setPlanningOptimise(data.calendar || {});
       } else {
         // Pas d'erreur si pas de planning généré
-        setPlanningOptimise([]);
+        setPlanningOptimise({});
       }
     } catch (err) {
       // Ignore l'erreur si pas de planning
-      setPlanningOptimise([]);
+      setPlanningOptimise({});
     }
   };
 
@@ -185,7 +178,7 @@ const PlanningCalendrier: React.FC = () => {
       });
       const data = await response.json();
       if (response.ok) {
-        setPlanningOptimise(data.planning);
+        setPlanningOptimise(data.calendar || {});
         setError('');
       } else {
         setError(data.error);
@@ -202,10 +195,53 @@ const PlanningCalendrier: React.FC = () => {
     return dispo ? dispo.available : false;
   };
 
-  const getPlanningForDate = (date: string, slot?: number): PlanningAssignment[] => {
-    return planningOptimise.filter(p => {
-      return p.day === date && (slot === undefined || p.slot === slot);
+  const getPlanningForDate = (date: string, slot: number): CreneauPlanning | null => {
+    const dayPlanning = planningOptimise[date];
+    if (!dayPlanning) return null;
+    
+    const creneauKey = `creneau${slot}` as keyof typeof dayPlanning;
+    return dayPlanning[creneauKey] || null;
+  };
+
+  // Calculer la couverture et la couleur pour un créneau donné
+  const getCouvertureCreneau = (date: string, slot: number): { couverture: number, couleur: string, pompiers: PompierPlanifie[], manquants: string[] } => {
+    const creneauData = getPlanningForDate(date, slot);
+    
+    if (!creneauData) {
+      return { 
+        couverture: 0, 
+        couleur: 'rouge', 
+        pompiers: [],
+        manquants: ['Pas de données']
+      };
+    }
+
+    // Utiliser les données calculées par le backend
+    let couleur = 'rouge';
+    if (creneauData.color === 'green') couleur = 'vert';
+    else if (creneauData.color === 'orange') couleur = 'orange';
+    
+    // Construire la liste des éléments manquants
+    const manquants: string[] = [];
+    
+    // Ajouter les shortages explicites
+    Object.entries(creneauData.shortages).forEach(([role, count]) => {
+      manquants.push(`Manque: ${count} ${role}`);
     });
+    
+    // Ajouter les rôles manquants pour le créneau 3
+    if (slot === 3 && creneauData.missing_roles.length > 0) {
+      creneauData.missing_roles.forEach(role => {
+        manquants.push(`Rôle manquant: ${role}`);
+      });
+    }
+
+    return { 
+      couverture: creneauData.coverage_percent, 
+      couleur, 
+      pompiers: creneauData.pompiers,
+      manquants
+    };
   };
 
   const changeMonth = (increment: number) => {
@@ -290,24 +326,36 @@ const PlanningCalendrier: React.FC = () => {
     return (
       <div className="cell-content">
         {slots.map(slot => {
-          const assignments = getPlanningForDate(date.date, slot);
+          const { couverture, couleur, pompiers, manquants } = getCouvertureCreneau(date.date, slot);
+          
+          const handleCreneauClick = () => {
+            setSelectedCreneauDetail({date: date.date, slot});
+          };
+          
           return (
-            <div key={slot} className="slot-planning">
+            <div 
+              key={slot} 
+              className={`slot-planning slot-${couleur}`}
+              onClick={handleCreneauClick}
+              style={{ cursor: 'pointer' }}
+              title={`C${slot}: ${couverture.toFixed(0)}% de couverture - ${pompiers.length} pompier(s) - Cliquez pour voir les détails`}
+            >
               <div className="slot-header">C{slot}</div>
-              {assignments.length > 0 ? (
-                <div className="assignments">
-                  {assignments.map((assignment, idx) => (
-                    <div
-                      key={idx}
-                      className={`assignment ${assignment.category.toLowerCase()}`}
-                      title={`${assignment.person_name} - ${assignment.role}`}
-                    >
-                      {assignment.person_name || `Manque ${assignment.shortage_count}`}
-                    </div>
-                  ))}
+              <div className="coverage-indicator">
+                <div className="coverage-bar">
+                  <div 
+                    className={`coverage-fill coverage-${couleur}`}
+                    style={{ width: `${couverture}%` }}
+                  ></div>
                 </div>
-              ) : (
-                <div className="no-assignment">-</div>
+                <div className="coverage-text">
+                  {pompiers.length} pompier{pompiers.length > 1 ? 's' : ''}
+                </div>
+              </div>
+              {manquants.length > 0 && (
+                <div className="shortage-indicator">
+                  ⚠️
+                </div>
               )}
             </div>
           );
@@ -433,6 +481,66 @@ const PlanningCalendrier: React.FC = () => {
           })}
         </div>
       </div>
+
+      {/* Modal détail créneau */}
+      {selectedCreneauDetail && (
+        <div className="modal-overlay" onClick={() => setSelectedCreneauDetail(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Détail du Créneau {selectedCreneauDetail.slot}</h3>
+              <span className="date-detail">{new Date(selectedCreneauDetail.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+              <button className="close-button" onClick={() => setSelectedCreneauDetail(null)}>×</button>
+            </div>
+            
+            {(() => {
+              const { couverture, couleur, pompiers, manquants } = getCouvertureCreneau(selectedCreneauDetail.date, selectedCreneauDetail.slot);
+              
+              return (
+                <div className="modal-body">
+                  <div className={`coverage-status status-${couleur}`}>
+                    <div className="coverage-percentage">{couverture.toFixed(0)}% de couverture</div>
+                    <div className="coverage-info">
+                      {selectedCreneauDetail.slot === 1 && `${pompiers.length}/3 pompiers requis`}
+                      {(selectedCreneauDetail.slot === 2 || selectedCreneauDetail.slot === 4) && `${pompiers.length}/8 pompiers requis`}
+                      {selectedCreneauDetail.slot === 3 && `${manquants.length === 0 ? 'Tous les rôles couverts' : `${manquants.length} rôle(s) manquant(s)`}`}
+                    </div>
+                  </div>
+                  
+                  {manquants.length > 0 && (
+                    <div className="shortage-section">
+                      <h4>⚠️ Manques identifiés :</h4>
+                      <ul>
+                        {manquants.map((manque, idx) => (
+                          <li key={idx}>{manque}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  
+                  <div className="pompiers-section">
+                    <h4>👨‍🚒 Pompiers assignés ({pompiers.length}) :</h4>
+                    {pompiers.length > 0 ? (
+                      <div className="pompiers-list">
+                        {pompiers.map((pompier, idx) => (
+                          <div key={idx} className="pompier-item">
+                            <span className="pompier-name">{pompier.name}</span>
+                            {pompier.role && pompier.role !== '-' && (
+                              <span className="pompier-role">{pompier.role}</span>
+                            )}
+                            <span className="pompier-category">{pompier.category}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="no-pompiers">Aucun pompier assigné</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       <div className="legend">
         {viewMode === 'disponibilites' ? (
