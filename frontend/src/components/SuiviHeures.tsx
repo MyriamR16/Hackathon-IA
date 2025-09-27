@@ -104,7 +104,7 @@ const SuiviHeures: React.FC = () => {
         });
       });
 
-      const heuresManquantes = Math.max(0, HEURES_OBJECTIF - heuresTotal);
+      const heuresManquantes = HEURES_OBJECTIF - heuresTotal;
       const pourcentageAccompli = Math.min(100, (heuresTotal / HEURES_OBJECTIF) * 100);
 
       const stats: StatsPompier = {
@@ -112,7 +112,7 @@ const SuiviHeures: React.FC = () => {
         nom: pompierNom,
         heures_realisees: heuresTotal,
         heures_objectif: HEURES_OBJECTIF,
-        heures_manquantes: heuresManquantes,
+        heures_manquantes: Math.abs(heuresManquantes),
         pourcentage_accompli: Math.round(pourcentageAccompli * 100) / 100,
         repartition_creneaux: repartitionCreneaux,
         details_mensuel: detailsMensuel
@@ -218,20 +218,33 @@ const SuiviHeures: React.FC = () => {
                 <span className="value">{statsHeures.heures_objectif}h</span>
                 <span className="label">Objectif</span>
               </div>
-              {statsHeures.heures_manquantes > 0 && (
+              {statsHeures.heures_realisees < statsHeures.heures_objectif ? (
                 <div className="hour-stat alert">
                   <span className="value">-{statsHeures.heures_manquantes}h</span>
                   <span className="label">Manquantes</span>
+                </div>
+              ) : (
+                <div className="hour-stat success">
+                  <span className="value">+{statsHeures.heures_manquantes}h</span>
+                  <span className="label">Dépassement</span>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Message d'alerte si nécessaire */}
-          {statsHeures.heures_manquantes > 0 && (
+          {/* Message d'alerte ou de félicitations */}
+          {statsHeures.heures_realisees < statsHeures.heures_objectif ? (
             <div className="alert-message">
               🚨 <strong>Attention !</strong> Il manque encore <strong>{statsHeures.heures_manquantes} heures</strong> à ce pompier 
               pour atteindre l'objectif annuel de {HEURES_OBJECTIF} heures d'astreinte.
+            </div>
+          ) : statsHeures.heures_realisees > statsHeures.heures_objectif ? (
+            <div className="success-message">
+              🎉 <strong>Bravo !</strong> Ce pompier a dépassé l'objectif annuel de <strong>{statsHeures.heures_manquantes} heures</strong> !
+            </div>
+          ) : (
+            <div className="success-message">
+              ✅ <strong>Parfait !</strong> L'objectif annuel de {HEURES_OBJECTIF} heures a été atteint exactement !
             </div>
           )}
 
