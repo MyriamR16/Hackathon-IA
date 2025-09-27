@@ -5,6 +5,20 @@ import re
 
 bp = Blueprint('api', __name__)
 
+def is_admin():
+    """Vérifier si l'utilisateur connecté est un administrateur"""
+    if 'pompier_id' not in session:
+        return False
+    
+    pompier = Pompier.query.get(session['pompier_id'])
+    return pompier and pompier.role == 'admin'
+
+def require_admin():
+    """Décorateur pour vérifier les droits d'administration"""
+    if not is_admin():
+        return jsonify({'error': 'Accès refusé. Droits d\'administrateur requis.'}), 403
+    return None
+
 def validate_password(password):
     """Valider qu'un mot de passe est fort"""
     if len(password) < 8:
@@ -22,6 +36,11 @@ def validate_password(password):
 @bp.route('/admin/add-pompier', methods=['POST'])
 def admin_add_pompier():
     """Endpoint pour l'administrateur pour ajouter un nouveau pompier"""
+    # Vérifier les droits d'admin
+    admin_check = require_admin()
+    if admin_check:
+        return admin_check
+    
     data = request.get_json()
     
     if not data:
@@ -48,7 +67,9 @@ def admin_add_pompier():
             nom=data['nom'].strip().title(),
             prenom=data['prenom'].strip().title(),
             grade=data['grade'],
-            email=data['email'].strip().lower()
+            email=data['email'].strip().lower(),
+            adresse=data.get('adresse', ''),
+            type_pompier=data.get('type', 'volontaire')
         )
         new_pompier.set_password(data['password'])
         
@@ -93,7 +114,9 @@ def inscription():
             nom=data['nom'].strip().title(),
             prenom=data['prenom'].strip().title(),
             grade=data['grade'],
-            email=data['email'].strip().lower()
+            email=data['email'].strip().lower(),
+            adresse=data.get('adresse', ''),
+            type_pompier=data.get('type', 'volontaire')
         )
         new_pompier.set_password(data['password'])
         
@@ -157,3 +180,105 @@ def get_grades():
         'Colonel'
     ]
     return jsonify({'grades': grades}), 200
+
+@bp.route('/admin/pompiers', methods=['GET'])
+def get_all_pompiers():
+    """Récupérer la liste de tous les pompiers (admin seulement)"""
+    # Vérifier les droits d'admin
+    admin_check = require_admin()
+    if admin_check:
+        return admin_check
+    
+    try:
+        pompiers = Pompier.query.all()
+        pompiers_data = [pompier.to_dict() for pompier in pompiers]
+        return jsonify({'pompiers': pompiers_data}), 200
+    except Exception as e:
+        return jsonify({'error': 'Erreur lors de la récupération des pompiers'}), 500
+
+@bp.route('/admin/pompier/<int:pompier_id>', methods=['PUT'])
+def update_pompier(pompier_id):
+    """Modifier les informations d'un pompier (admin seulement)"""
+    # Vérifier les droits d'admin
+    admin_check = require_admin()
+    if admin_check:
+        return admin_check
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Données manquantes'}), 400
+    
+    try:
+        pompier = Pompier.query.get(pompier_id)
+        if not pompier:
+            return jsonify({'error': 'Pompier non trouvé'}), 404
+        
+        # Mettre à jour les champs si présents
+        if 'nom' in data:
+            pompier.nom = data['nom'].strip().title()
+        if 'prenom' in data:
+            pompier.prenom = data['prenom'].strip().title()
+        if 'grade' in data:
+            pompier.grade = data['grade']
+        if 'email' in data:
+            # Vérifier que l'email n'est pas déjà utilisé par un autre pompier
+            existing = Pompier.query.filter(
+                Pompier.email == data['email'].strip().lower(),
+                Pompier.id != pompier_id
+            ).first()
+            if existing:
+                return jsonify({'error': 'Cette adresse email est déjà utilisée'}), 400
+            pompier.email = data['email'].strip().lower()
+        if 'adresse' in data:
+            pompier.adresse = data['adresse']
+        if 'type_pompier' in data:
+            pompier.type_pompier = data['type_pompier']
+        
+        # Changer le mot de passe si fourni
+        if 'password' in data and data['password']:
+            is_valid, message = validate_password(data['password'])
+            if not is_valid:
+                return jsonify({'error': message}), 400
+            pompier.set_password(data['password'])
+        
+        db.session.commit()
+        return jsonify({
+            'message': 'Pompier modifié avec succès',
+            'pompier': pompier.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Erreur lors de la modification du pompier'}), 500
+
+@bp.route('/admin/pompier/<int:pompier_id>', methods=['DELETE'])
+def delete_pompier(pompier_id):
+    """Supprimer un pompier (admin seulement)"""
+    # Vérifier les droits d'admin
+    admin_check = require_admin()
+    if admin_check:
+        return admin_check
+    
+    try:
+        pompier = Pompier.query.get(pompier_id)
+        if not pompier:
+            return jsonify({'error': 'Pompier non trouvé'}), 404
+        
+        # Empêcher la suppression du dernier admin
+        if pompier.role == 'admin':
+            admin_count = Pompier.query.filter_by(role='admin').count()
+            if admin_count <= 1:
+                return jsonify({'error': 'Impossible de supprimer le dernier administrateur'}), 400
+        
+        db.session.delete(pompier)
+        db.session.commit()
+        return jsonify({'message': 'Pompier supprimé avec succès'}), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Erreur lors de la suppression du pompier'}), 500
+
+@bp.route('/check-admin', methods=['GET'])
+def check_admin_status():
+    """Vérifier si l'utilisateur connecté est admin"""
+    return jsonify({'is_admin': is_admin()}), 200
