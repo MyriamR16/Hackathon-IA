@@ -318,19 +318,60 @@ def check_admin_status():
 
 @bp.route('/planning/disponibilites', methods=['GET'])
 def get_disponibilites():
-    """Récupérer les disponibilités de tous les pompiers"""
+    """Récupérer les disponibilités des pompiers avec filtrage possible"""
     try:
+        pompier = request.args.get('pompier')
+        annee = request.args.get('annee', '2025')
+        mois = request.args.get('mois')
+        
         # Lire le fichier CSV des disponibilités
-        csv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'disponibilites_2026.csv')
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        csv_path = os.path.join(project_root, 'disponibilites_2026.csv')
         
         if not os.path.exists(csv_path):
             return jsonify({'error': 'Fichier des disponibilités non trouvé'}), 404
         
         df = pd.read_csv(csv_path)
-        
-        # Convertir en format JSON plus facilement utilisable
-        disponibilites = []
         id_col = df.columns[0]
+        
+        # Si un pompier spécifique est demandé
+        if pompier:
+            pompier_data = df[df[id_col] == pompier]
+            if pompier_data.empty:
+                return jsonify({'error': f'Pompier {pompier} non trouvé'}), 404
+                
+            pompier_row = pompier_data.iloc[0]
+            disponibilites = {}
+            
+            # Parcourir les colonnes de créneaux
+            for col in df.columns[1:]:  # Ignorer la première colonne 'personne'
+                if '_creneau' in col:
+                    try:
+                        # Parser la date du nom de colonne (format: 2025-01-01_creneau1)
+                        date_part = col.split('_creneau')[0]
+                        creneau_num = col.split('_creneau')[1]
+                        
+                        # Si un mois est spécifié, filtrer par mois
+                        if mois:
+                            date_obj = datetime.strptime(date_part, '%Y-%m-%d')
+                            if date_obj.month != int(mois):
+                                continue
+                        
+                        if date_part not in disponibilites:
+                            disponibilites[date_part] = {}
+                        
+                        is_available = str(pompier_row[col]).lower() in ['oui', 'yes', '1', 'x', 'true']
+                        disponibilites[date_part][f'creneau{creneau_num}'] = is_available
+                    except Exception as e:
+                        continue
+            
+            return jsonify({
+                'pompier': pompier,
+                'disponibilites': disponibilites
+            }), 200
+        
+        # Sinon, retourner toutes les disponibilités (format original pour compatibilité)
+        disponibilites = []
         
         for _, row in df.iterrows():
             pompier_id = row[id_col]
@@ -359,6 +400,25 @@ def get_disponibilites():
         
     except Exception as e:
         return jsonify({'error': f'Erreur lors de la lecture des disponibilités: {str(e)}'}), 500
+
+@bp.route('/planning/pompiers', methods=['GET'])
+def get_list_pompiers():
+    """Récupérer la liste de tous les pompiers"""
+    try:
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        csv_path = os.path.join(project_root, 'disponibilites_2026.csv')
+        
+        if not os.path.exists(csv_path):
+            return jsonify({'error': 'Fichier des disponibilités non trouvé'}), 404
+        
+        df = pd.read_csv(csv_path)
+        id_col = df.columns[0]
+        pompiers = df[id_col].tolist()
+        
+        return jsonify({'pompiers': pompiers}), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur lors de la lecture des pompiers: {str(e)}'}), 500
 
 @bp.route('/planning/optimise', methods=['POST'])
 def generate_planning_optimise():
